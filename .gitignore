@@ -1,0 +1,16 @@
+# Ignore JSON files
+*.json
+
+# Ignore JSONL files
+*.jsonl
+
+# Ignore model files (.bin)
+*.bin
+
+*.pyc
+
+#ignore log files 
+*.log
+
+#ignore cache
+./__paycache__
