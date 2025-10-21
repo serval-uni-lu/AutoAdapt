@@ -4,7 +4,7 @@ from copy import deepcopy
 import random
 import math
 import numpy as np
-from model import Model_classification , Model_codeSearch
+from model import Model
 from torch.nn.functional import binary_cross_entropy , binary_cross_entropy_with_logits
 from transformers import (WEIGHTS_NAME, get_linear_schedule_with_warmup, RobertaTokenizer, RobertaModel ,AutoModel, AutoTokenizer)
 from myOpenDelta.opendelta import AdapterModel
@@ -252,8 +252,6 @@ def get_delta_model ( model, adapter_parameters:dict , device= "cpu")  :
                                     #device=device
                                     
                                     )
-               
-           
     delta_model.freeze_module(exclude=["deltas" ])
     delta_model.log(delta_ratio=True, trainable_ratio=True, visualization=False)
     logger.info(count_rate_trainable_parameters(model.encoder)*100)
@@ -282,6 +280,7 @@ def regularized_evolution(args, config, train_datalaoder , eval_dataloader,  cyc
     avg_fscore_per_cycle = []
 
 
+
     # Override parameters if provided
     population_size = args.population_size if args.population_size else population_size
     cycles = args.cycles if args.cycles else cycles
@@ -290,21 +289,14 @@ def regularized_evolution(args, config, train_datalaoder , eval_dataloader,  cyc
 
     
     logger.info("\n\nInitialization of the population, may take a while ...\n\n")
-   
+
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     if init_population is None:
         while len(population) < population_size:
             model = AutoModel.from_pretrained(args.model_name_or_path,config=config) 
             delta_parameters = random_adapter_parameters(config)
             model = get_delta_model(model , delta_parameters , args.device)
-
-            if args.task =="code_search" : 
-                delta_model =  Model_codeSearch( model, config )
-            else :
-
-                delta_model = Model_classification( model, config )
-
-
+            delta_model = Model(model, config)
             logger.info(" ==> Delta parameters \n {} \n".format( delta_parameters ))
             adapter_params = tuple([dict_to_tuple(d)  if d!=0 else d for d in delta_parameters])
 
@@ -374,21 +366,15 @@ def regularized_evolution(args, config, train_datalaoder , eval_dataloader,  cyc
 
             model = AutoModel.from_pretrained(args.model_name_or_path,config=config) 
             child_model =   get_delta_model(model , child , args.device)
-
-            if args.task =="code_search" : 
-                child_model =  Model_codeSearch( child_model, config)
-            else :
-
-                child_model = Model_classification( child_model, config )
-            
+            child_model = Model(child_model, config)
+    
             if args.n_gpu > 1:
                 child_model= torch.nn.DataParallel(child_model, device_ids=[0])
 
             child_model.to(args.device)
             child_metric ,child_perfomance, child_f1_score, child_trainale_rate = fitness(child_model,  args , tokenizer, train_datalaoder, eval_dataloader)
-         
             if child_metric == FAIL_COMPILE:
-                  continue
+                continue
             # If not failed, then add to the population
             population.append((child, child_metric , child_perfomance,child_f1_score, child_trainale_rate))
             # and add to the history
@@ -398,8 +384,8 @@ def regularized_evolution(args, config, train_datalaoder , eval_dataloader,  cyc
             # Best model in the current population
             best_candidate = max(list(population), key=lambda i: i[1])
             if best_candidate[1] > best_of_all[1]:
-              # Best model during whole calculation
-              best_of_all = best_candidate
+                # Best model during whole calculation
+                best_of_all = best_candidate
 
 
             logger.info("\n\nCycle {0}, the best candidate in pop : score {1} / Eval acc {2} / f1 score {3} / parameters {4}. And best in the run : score {5} / eval acc {6}/ f1 score {7} / parameters {8} "\
@@ -408,7 +394,6 @@ def regularized_evolution(args, config, train_datalaoder , eval_dataloader,  cyc
             #population_scores = [x[1] for x in list(population)]
             #population_mean = np.mean(population_scores)
             #population_std = np.round (np.std(population_scores),3)
-         
             #logger.info("Mean {0} and standard deviation {1} of score in the population\n\n".format(population_mean, population_std))
 
 

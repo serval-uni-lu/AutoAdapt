@@ -6,7 +6,7 @@ import os
 import pprint
 import torch
 import numpy as np
-from model import Model_codeSearch
+from model import Model
 from torch.utils.data.dataset import ConcatDataset
 from tqdm import tqdm
 import torch.nn as nn
@@ -91,7 +91,6 @@ def train_codeSearch(args, model, tokenizer , train_dataloader_code_search , eva
             logger.info("  Best eval mrr:%s",round(best_mrr,4))
             logger.info("  "+"*"*20)  
             
-
             if not args.do_optimization : 
                 logger.info("***** Running Test *****")
                 test_results_code_search = evaluate_code_search(args, model, test_dataloader_code_search, test_dataloader_code_search , eval_when_training=False)
@@ -109,13 +108,10 @@ def train_codeSearch(args, model, tokenizer , train_dataloader_code_search , eva
 
 
 def evaluate_code_search(args, model, query_dataloader , code_dataloader ,eval_when_training=False):
-
-    # Eval!
     logger.info("  Num queries = %d", len(code_dataloader.dataset))
     logger.info("  Num codes = %d", len(code_dataloader.dataset))
     logger.info("  Batch size = %d", args.eval_batch_size)
 
-    
     model.eval()
     code_vecs = [] 
     nl_vecs = []
@@ -174,8 +170,6 @@ def main():
 
 
     parser = argparse.ArgumentParser()
-
-
     parser.add_argument("--output_dir", default='./', type=str,
                         help="The output directory where the model predictions and checkpoints will be written.")
     parser.add_argument("--task", default="code_search", type=str, 
@@ -188,11 +182,11 @@ def main():
                         help="An optional input test data file to test the MRR(a josnl file).")
     parser.add_argument("--codebase_file", default="", type=str,
                         help="An optional input test data file to codebase (a jsonl file).")  
-    parser.add_argument("--model_name_or_path", default='Salesforce/codet5-base', type=str,
+    parser.add_argument("--model_name_or_path", default='microsoft/unixcoder-base', type=str,
                         help="The model checkpoint for weights initialization.")
-    parser.add_argument("--config_name", default="Salesforce/codet5-base", type=str,
+    parser.add_argument("--config_name", default="microsoft/unixcoder-base", type=str,
                         help="Optional pretrained config name or path if not the same as model_name_or_path")
-    parser.add_argument("--tokenizer_name", default="Salesforce/codet5-base", type=str,
+    parser.add_argument("--tokenizer_name", default="microsoft/unixcoder-base", type=str,
                         help="Optional pretrained tokenizer name or path if not the same as model_name_or_path")
     parser.add_argument("--nl_length", default=128, type=int,
                         help="Optional NL input sequence length after tokenization.")    
@@ -249,17 +243,21 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path ,trust_remote_code=True)
     model = AutoModel.from_pretrained(args.model_name_or_path,config=config , trust_remote_code=True)  
 
+    
+    # Ensure the unified Model sees a list and switches to embedding mode
+    if not hasattr(config, "tasks") or config.tasks is None:
+        config.tasks = ["code_search"]
+    elif isinstance(config.tasks, (str, bytes)):
+        config.tasks = [config.tasks.lower()]
+    else:
+        config.tasks = [str(t).lower() for t in config.tasks]
+
+
     #get training dataset
     train_dataset_code_search = TextDataset_code_search(tokenizer, args, args.train_data_file_CodeSearch , nb_samples=None )#args.nb_samples)
     train_dataloader_code_search = DataLoader(train_dataset_code_search, sampler=RandomSampler(train_dataset_code_search), batch_size=args.train_batch_size,num_workers=4)
-    
-
-
     eval_dataset_code_search = TextDataset_code_search(tokenizer, args, args.eval_data_file_CodeSearch , nb_samples=None)
     eval_dataloader_code_search = DataLoader(eval_dataset_code_search, sampler=SequentialSampler(eval_dataset_code_search), batch_size=args.eval_batch_size,num_workers=4)
-
-
-
     test_dataset_code_search = TextDataset_code_search(tokenizer, args, args.test_data_file_CodeSearch , nb_samples=None)
     test_dataloader_code_search = DataLoader(test_dataset_code_search, sampler=SequentialSampler(test_dataset_code_search), batch_size=args.train_batch_size,num_workers=4)
     
@@ -275,41 +273,32 @@ def main():
 
     else : 
         
-        
-
-        """
+        """use if you want to train with standards PEFT modules"""
         #delta = AdapterModel(model , bottleneck_dim=[24] )
         #delta = LoraModel(model)
-        delta = PrefixModel(model)
-        delta.freeze_module(exclude=["deltas" ])
-        delta.log()
-        
-        model = Model_codeSearch( model , config)
-
-        if args.n_gpu > 1:
-            model = torch.nn.DataParallel(model, device_ids=[1])
-
-        model.to(args.device)
-        
-        """
+        #delta = PrefixModel(model)
+        #delta.freeze_module(exclude=["deltas" ])
+        #delta.log()
+        #model = Model( model , config)
+        #model.to(args.device)
         
         
-        
-        x_list = [ 
-           [{'insert_modules': ('attention.self', 'intermediate', 'output'), 'bottleneck_dim': (16, 64, 128), 'non_linearity': 'gelu', 'dropout_rate': 0.2, 'normalization': 'layer_norm', 'skip_connection': True}, 0, 0, {'insert_modules': ('intermediate', 'attention.self'), 'bottleneck_dim': (64, 32), 'non_linearity': 'swish', 'dropout_rate': 0.3, 'normalization': 'layer_norm', 'skip_connection': True}, 0, 0, 0, 0, 0, 0, {'insert_modules': ('attention.output', 'intermediate', 'attention.self'), 'bottleneck_dim': (32, 64, 16), 'non_linearity': 'silu', 'dropout_rate': 0.0, 'normalization': None, 'skip_connection': True}, {'insert_modules': ('output', 'attention.self'), 'bottleneck_dim': (256, 16), 'non_linearity': 'leakyrelu', 'dropout_rate': 0.1, 'normalization': 'layer_norm', 'skip_connection': True}]
-        ]
+        """specifiying your own architecture here """
+        x_list = [ [{'insert_modules': ('attention.self', 'intermediate', 'output'), 'bottleneck_dim': (16, 64, 128), 'non_linearity': 'gelu', 'dropout_rate': 0.2, 'normalization': 'layer_norm', 'skip_connection': True}, 0, 0, {'insert_modules': ('intermediate', 'attention.self'), 'bottleneck_dim': (64, 32), 'non_linearity': 'swish', 'dropout_rate': 0.3, 'normalization': 'layer_norm', 'skip_connection': True}, 0, 0, 0, 0, 0, 0, {'insert_modules': ('attention.output', 'intermediate', 'attention.self'), 'bottleneck_dim': (32, 64, 16), 'non_linearity': 'silu', 'dropout_rate': 0.0, 'normalization': None, 'skip_connection': True}, {'insert_modules': ('output', 'attention.self'), 'bottleneck_dim': (256, 16), 'non_linearity': 'leakyrelu', 'dropout_rate': 0.1, 'normalization': 'layer_norm', 'skip_connection': True}]]
         
         
         if args.do_train:
             
+            """train with different architectures specified in x_list. comment this if you want to train with standard PEFT modules"""
             for x in x_list : 
-                
                 set_seed(seed=args.seed)
                 model = AutoModel.from_pretrained(args.model_name_or_path,config=config , trust_remote_code=True)  
                 logger.info(x)
                 model = get_delta_model(model , x , args.device)
-                model = Model_codeSearch( model , config)
+                model = Model( model , config)
                 model.to(args.device)
+                
+                """to use in both standard PEFT modules and custom architectures"""
                 results = train_codeSearch(args , model ,tokenizer , 
                                            train_dataloader_code_search , 
                                            eval_dataloader_code_search , 
@@ -322,9 +311,9 @@ def main():
                 checkpoint_prefix = 'models/final_model_codeSearch/model.bin'
                 output_dir = os.path.join(args.output_dir, '{}'.format(checkpoint_prefix))  
                 model.load_state_dict(torch.load(output_dir) , strict=False)      
-                eval_dataset_vul= TextDataset_defect(tokenizer, args,args.eval_data_file_vul)
-                eval_dataloader_vul = DataLoader(eval_dataset_vul  , sampler=SequentialSampler(eval_dataset_vul ), batch_size=args.eval_batch_size,num_workers=4,pin_memory=True)
-                result_task1= evaluate_code_search(args, model, eval_dataloader_vul  )
+                eval_dataset_code_search = TextDataset_code_search(tokenizer, args, args.eval_data_file_CodeSearch, nb_samples=None)
+                eval_dataloader_code_search = DataLoader(eval_dataset_code_search, sampler=SequentialSampler(eval_dataset_code_search), batch_size=args.eval_batch_size, num_workers=4, pin_memory=True)
+                result_task1 = evaluate_code_search(args, model, eval_dataloader_code_search, eval_dataloader_code_search)
                 logger.info("\n***** Eval results *****")
                 for key , value in result_task1.items() : 
                     logger.info("  %s = %s", key, str(value))

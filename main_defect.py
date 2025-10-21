@@ -4,7 +4,7 @@ import logging
 import os
 import torch
 import numpy as np
-from model import Model_classification
+from model import Model
 from tqdm import tqdm
 import torch.nn as nn
 from torch.nn.functional import binary_cross_entropy , binary_cross_entropy_with_logits
@@ -227,18 +227,17 @@ def main():
                         help="Optional NL input sequence length after tokenization.")    
     parser.add_argument("--code_length", default=512, type=int,
                         help="Optional Code input sequence length after tokenization.") 
-    
     parser.add_argument("--do_optimization", default=None, type=bool,
                         help="Whether to run adapter optimization")  
     parser.add_argument("--do_train", default=None, type=bool,
                         help="Whether to run training.")
-    parser.add_argument("--do_eval", default=True, type=bool,
+    parser.add_argument("--do_eval", default=None, type=bool,
                         help="Whether to run eval on the dev set.")
     parser.add_argument("--do_test", default=None, type=bool,
                         help="Whether to run eval on the test set.") 
-    parser.add_argument("--train_batch_size", default=32, type=int,
+    parser.add_argument("--train_batch_size", default=16, type=int,
                         help="Batch size for training.")
-    parser.add_argument("--eval_batch_size", default=32, type=int,
+    parser.add_argument("--eval_batch_size", default=16, type=int,
                         help="Batch size for evaluation.")
     parser.add_argument("--train_data_rate_defect", default=1.0, type= float,
                         help="Data size for train")
@@ -280,6 +279,14 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path , trust_remote_code=True)
     model = AutoModel.from_pretrained(args.model_name_or_path,config=config , trust_remote_code=True) 
     
+    if not hasattr(config, "tasks") or config.tasks is None:
+        config.tasks = ["defect_detection"]
+    elif isinstance(config.tasks, (str, bytes)):
+        config.tasks = [config.tasks.lower()]
+    else:
+        config.tasks = [str(t).lower() for t in config.tasks]
+    
+    
     train_dataset=TextDataset_defect(tokenizer, args, args.train_data_file_defect, nb_samples =None) #args.nb_samples)
     train_sampler = RandomSampler(train_dataset)
     train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size,num_workers=4, pin_memory=True )
@@ -316,16 +323,15 @@ def main():
         
         # to finetune with a fixed adapter across all layers 
         delta = AdapterModel(model , bottleneck_dim=[24])
-        delta = LoraModel(model)
-        delta = PrefixModel(model)
+        #delta = LoraModel(model)
+        #delta = PrefixModel(model)
         delta.freeze_module(exclude=["deltas" ])
         delta.log()
-        model = Model_classification( model , config)
-
+        model = Model( model , config)
         if args.n_gpu > 1:
             model = torch.nn.DataParallel(model, device_ids=[0])
-            
         model.to(args.device)
+        print(model)
         if args.do_train:
             
             # loop for training with different configs in x_list 
@@ -335,7 +341,7 @@ def main():
                 model = AutoModel.from_pretrained(args.model_name_or_path,config=config , trust_remote_code=True) 
                 print('\n',x,'\n')
                 model = get_delta_model(model , x)
-                model = Model_classification( model , config)
+                model = Model( model , config)
                 model.to(args.device)
             """
             results = train_defect(args , model ,tokenizer , 

@@ -317,7 +317,7 @@ def main():
     config = AutoConfig.from_pretrained(args.model_name_or_path, trust_remote_code=True)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path , trust_remote_code=True)
     model = AutoModel.from_pretrained(args.model_name_or_path,config=config , trust_remote_code=True)
-
+    config.tasks = "flaky_test"
    
     x_list = [ 
            [{'insert_modules': ('attention.self', 'intermediate', 'output'), 'bottleneck_dim': (16, 64, 128), 'non_linearity': 'gelu', 'dropout_rate': 0.2, 'normalization': 'layer_norm', 'skip_connection': True}, 0, 0, {'insert_modules': ('intermediate', 'attention.self'), 'bottleneck_dim': (64, 32), 'non_linearity': 'swish', 'dropout_rate': 0.3, 'normalization': 'layer_norm', 'skip_connection': True}, 0, 0, 0, 0, 0, 0, {'insert_modules': ('attention.output', 'intermediate', 'attention.self'), 'bottleneck_dim': (32, 64, 16), 'non_linearity': 'silu', 'dropout_rate': 0.0, 'normalization': None, 'skip_connection': True}, {'insert_modules': ('output', 'attention.self'), 'bottleneck_dim': (256, 16), 'non_linearity': 'leakyrelu', 'dropout_rate': 0.1, 'normalization': 'layer_norm', 'skip_connection': True}]

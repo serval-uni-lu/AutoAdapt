@@ -5,7 +5,7 @@ import logging
 import os
 import torch
 import numpy as np
-from model import Model_classification
+from model import Model
 from tqdm import tqdm
 import torch.nn as nn
 import transformers
@@ -42,7 +42,6 @@ def train_clone(args, model,  tokenizer, train_dataloader , eval_dataloader , te
     loss_fn = nn.BCELoss()
     early_stopper = EarlyStopper(patience=3, min_delta=0.03)
     results =  {}
-
     for idx in range(args.num_train_epochs): 
         LOSSes, ACCs =  [], []
         #bar = tqdm(train_dataloader,total=len(train_dataloader))
@@ -55,16 +54,13 @@ def train_clone(args, model,  tokenizer, train_dataloader , eval_dataloader , te
             logits = model(code_inputs=code_inputs)
             loss = loss_fn(logits,labels)
             accuracy = (logits.round() == labels ).float().mean().item()*100.0
-
             # perfom a backward step 
             LOSSes.append(loss.item() )
             # add current accuracies to accuracy arrays 
             ACCs.append(accuracy)
         
-
             # update progress bar
             #bar.set_description("Epoch {} Train Loss {}  Accuracy {}  ".format(idx, round(np.mean(LOSSes), 3) , np.round(np.mean(ACCs))))
-
             if (step+1)%100 == 0:
                 logger.info("Epoch {} Step {} Train Loss {}   Accuracy {} ".format(idx, step, round(np.mean(LOSSes), 3) ,  round(np.mean(ACCs), 3) ))
             
@@ -94,17 +90,13 @@ def train_clone(args, model,  tokenizer, train_dataloader , eval_dataloader , te
             logger.info("\n "+"*"*30)  
             logger.info("  Best F1 score :%s",round(best_acc,4))
             logger.info("  "+"*"*30)   
-
-
             if not args.do_optimization : 
         
                 #save_best_model(model, args , checkpoint_prefix="models/best_model_clone")
                 test_result =   test_clone(args, model, test_dataloader)  
-    
         
         #if early_stopper.early_stop(round(eval_results['eval_loss'],3)):             
             #break
-
     if not args.do_optimization : 
         save_best_model(model, args , checkpoint_prefix="models/final_model_clone")
         final_test_result =   test_clone(args, model, test_dataloader)
@@ -129,7 +121,6 @@ def evaluate_clone(args, model, eval_dataloader_clone ):
         nb_eval_steps = 0
         logits = []
         labels = []
-
         for batch in eval_dataloader_clone:
             inputs = batch[0].to(args.device)
             label = batch[1].to(args.device)
@@ -141,7 +132,6 @@ def evaluate_clone(args, model, eval_dataloader_clone ):
                 logits.append(logit.cpu().numpy())
                 labels.append(label.cpu().numpy())
             nb_eval_steps += 1
-
         logits = np.concatenate(logits, 0)
         labels = np.concatenate(labels, 0)
         preds = logits.round()
@@ -151,14 +141,12 @@ def evaluate_clone(args, model, eval_dataloader_clone ):
         recall = recall_score(labels , preds)
         precision = precision_score(labels , preds , zero_division=0)
         f1 = f1_score(labels , preds)
-
         result = {
             "eval_loss": round(float(perplexity),4),
             "eval_acc": round(eval_acc, 4),
             "f1_score" : round(f1, 4),
             "recall" : round(recall,4),
             "precision" : round(precision,4)}
-   
 
         return result
 
@@ -177,7 +165,6 @@ def test_clone(args, model, test_dataloader):
         inputs = batch[0].to(args.device)
         label = batch[1].to(args.device)
         with torch.no_grad():
-      
             logit = model(code_inputs=inputs)
             label = label.float().squeeze()
             logits.append(logit.cpu().numpy())
@@ -226,7 +213,6 @@ def main():
                         help="An optional input test data file to test the MRR(a josnl file).")
     parser.add_argument("--codebase_file", default=None, type=str,
                         help="An optional input test data file to codebase (a jsonl file).")  
-    
     parser.add_argument("--model_name_or_path", default='microsoft/graphcodebert-base', type=str,
                         help="The model checkpoint for weights initialization.")
     parser.add_argument("--config_name", default="", type=str,
@@ -237,20 +223,17 @@ def main():
                         help="Optional NL input sequence length after tokenization.")    
     parser.add_argument("--code_length", default=512, type=int,
                         help="Optional Code input sequence length after tokenization.") 
-    
     parser.add_argument("--do_optimization", default=None, type=bool,
                         help="Whether to run adapter optimization")  
-    parser.add_argument("--do_train", default=None, type=bool,
+    parser.add_argument("--do_train", default=True, type=bool,
                         help="Whether to run training.")
     parser.add_argument("--do_eval", default=None, type=bool,
                         help="Whether to run eval on the dev set.")
     parser.add_argument("--do_test", default=None, type=bool,
                         help="Whether to run eval on the test set.") 
-    
-
-    parser.add_argument("--train_batch_size", default=32, type=int,
+    parser.add_argument("--train_batch_size", default=16, type=int,
                         help="Batch size for training.")
-    parser.add_argument("--eval_batch_size", default=32, type=int,
+    parser.add_argument("--eval_batch_size", default=16, type=int,
                         help="Batch size for evaluation.")
     parser.add_argument("--train_data_rate_clone", default=0.0001, type= float,
                         help="Data size for train")
@@ -270,38 +253,38 @@ def main():
                         help="population size on the evolutionary optimization algorithm")
     parser.add_argument('--sample_size', default=2 ,type=int,
                         help="sample size on the evolutionary optimization algorithm")
-    
     parser.add_argument('--cycles', default=2 ,type=int,
                         help="number of cycles on the evolutionary optimization algorithm")
-    
     parser.add_argument('--optimization_history_file', default=None ,type=str,
                         help="saving the history of optimization")
     parser.add_argument('--stats_file', default=None ,type=str,
                         help="saving the optimization statistics ")
     
-
-
-
     
     
     args = parser.parse_args()
     set_seed(seed=args.seed)
-
     
     device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
     args.n_gpu = 1 #torch.cuda.device_count()
     args.device = device
     logger.info("device: %s, n_gpu: %s", device, args.n_gpu)
-
     config = AutoConfig.from_pretrained(args.model_name_or_path , num_labels = args.num_classes ,  trust_remote_code=True)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path ,  trust_remote_code=True)
     model = AutoModel.from_pretrained(args.model_name_or_path,config=config ,  trust_remote_code=True)  
-        
+    
+    # Ensure the unified Model sees a list and picks classification behavior
+    if not hasattr(config, "tasks") or config.tasks is None:
+        config.tasks = ["clone_detection"]
+    elif isinstance(config.tasks, (str, bytes)):
+        config.tasks = [config.tasks.lower()]
+    else:
+        config.tasks = [str(t).lower() for t in config.tasks]
+
 
     train_dataset=TextDataset_clone(tokenizer, args, args.train_data_file, nb_samples = None) #args.nb_samples)
     train_sampler = RandomSampler(train_dataset)
     train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size,num_workers=4,pin_memory=True )
-
     
     eval_dataset = TextDataset_clone(tokenizer, args,args.eval_data_file , nb_samples=41541 )
     eval_sampler = SequentialSampler(eval_dataset)
@@ -326,31 +309,27 @@ def main():
         #delta = PrefixModel(model)
         #delta.freeze_module(exclude=["deltas" ])
         #delta.log()
-        #model = Model_classification( model , config)
+        #model = Model( model , config)
         #if args.n_gpu > 1:
             #model = torch.nn.DataParallel(model, device_ids=[0,1])
         #model.to(args.device)
         # top 3 adapter configs 
         
         
-        x_list = [ 
-           [{'insert_modules': ('attention.self', 'intermediate', 'output'), 'bottleneck_dim': (16, 64, 128), 'non_linearity': 'gelu', 'dropout_rate': 0.2, 'normalization': 'layer_norm', 'skip_connection': True}, 0, 0, {'insert_modules': ('intermediate', 'attention.self'), 'bottleneck_dim': (64, 32), 'non_linearity': 'swish', 'dropout_rate': 0.3, 'normalization': 'layer_norm', 'skip_connection': True}, 0, 0, 0, 0, 0, 0, {'insert_modules': ('attention.output', 'intermediate', 'attention.self'), 'bottleneck_dim': (32, 64, 16), 'non_linearity': 'silu', 'dropout_rate': 0.0, 'normalization': None, 'skip_connection': True}, {'insert_modules': ('output', 'attention.self'), 'bottleneck_dim': (256, 16), 'non_linearity': 'leakyrelu', 'dropout_rate': 0.1, 'normalization': 'layer_norm', 'skip_connection': True}]
+        x_list = [ [{'insert_modules': ('attention.self', 'intermediate', 'output'), 'bottleneck_dim': (16, 64, 128), 'non_linearity': 'gelu', 'dropout_rate': 0.2, 'normalization': 'layer_norm', 'skip_connection': True}, 0, 0, {'insert_modules': ('intermediate', 'attention.self'), 'bottleneck_dim': (64, 32), 'non_linearity': 'swish', 'dropout_rate': 0.3, 'normalization': 'layer_norm', 'skip_connection': True}, 0, 0, 0, 0, 0, 0, {'insert_modules': ('attention.output', 'intermediate', 'attention.self'), 'bottleneck_dim': (32, 64, 16), 'non_linearity': 'silu', 'dropout_rate': 0.0, 'normalization': None, 'skip_connection': True}, {'insert_modules': ('output', 'attention.self'), 'bottleneck_dim': (256, 16), 'non_linearity': 'leakyrelu', 'dropout_rate': 0.1, 'normalization': 'layer_norm', 'skip_connection': True}]
         ]
         
         if args.do_train:
             
-          
             for x in x_list : 
                 set_seed(seed=args.seed)
                 model = AutoModel.from_pretrained(args.model_name_or_path,config=config ,  trust_remote_code=True)  
                 logger.info(x)
                 model = get_delta_model(model , x, args.device)
-                model = Model_classification( model , config)
+                model = Model( model , config)
                 if args.n_gpu > 1:
                     model = torch.nn.DataParallel(model, device_ids=[1])
-
                 model.to(args.device)
-           
                 results = train_clone(args , model ,tokenizer ,  
                                     train_dataloader , 
                                     eval_dataloader , 
@@ -374,19 +353,15 @@ def main():
             for key , value in result_task1.items() : 
                 logger.info("  %s = %s", key, str(value))
     
-                    
-
         
         if args.do_test:
             checkpoint_prefix = 'models/best_model_clone/model.bin'
             output_dir = os.path.join(args.output_dir, '{}'.format(checkpoint_prefix))  
             model.load_state_dict(torch.load(output_dir),  strict=False)    
-
             test_dataset_clone= TextDataset_clone(tokenizer, args,args.test_data_file_clone)
             test_dataloader_clone = DataLoader(test_dataset_clone  , sampler=SequentialSampler(test_dataset_clone ), batch_size=args.eval_batch_size,num_workers=4,pin_memory=True)
-           
             task1_test_result = test_clone(args, model, test_dataloader_clone ) 
-       
+
 
 
 if __name__ == "__main__":
