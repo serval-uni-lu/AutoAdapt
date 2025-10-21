@@ -1,8 +1,8 @@
-# AutoAdapt — On the Application of AutoML for Parameter-Efficient Fine-Tuning of Pre-Trained Code Models
+# AutoAdapt: On the Application of AutoML for Parameter-Efficient Fine-Tuning of Pre-Trained Code Models
 
 This repository provides the full source code and scripts required to replicate the experiments reported in the *AutoAdapt* research paper.
 
-The evaluated software engineering tasks include:
+The evaluated SE tasks include:
 
 - **Code search** (`main_codeSearch.py`)  
   - Dataset: **AdvTest** 
